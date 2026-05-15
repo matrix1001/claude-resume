@@ -694,17 +694,26 @@ def prompt_terminal(mux_available: dict, args) -> tuple[str | None, str | None]:
     if not mux_available:
         return None, None
 
+    # Validate default: only apply if that multiplexer is actually available
+    if default_mux and default_mux not in mux_available:
+        default_mux = None
+        default_mode = None
+
     options = [("current", "Current terminal")]
+    default_idx = None
     for mux_name, modes in mux_available.items():
         for mode_key, mode_label in modes:
             options.append((f"{mux_name}:{mode_key}", mode_label))
+            if mux_name == default_mux and mode_key == default_mode:
+                default_idx = len(options) - 1
 
     print()
     print(f"  Open in:")
     for i, (key, label) in enumerate(options):
-        marker = " (default)" if key == f"{default_mux}:{default_mode}" else ""
+        marker = " (default)" if i == default_idx else ""
         print(f"  [{i+1}] {label}{marker}")
-    print(f"  Select [1-{len(options)}] or Enter for [1]: ", end="")
+    default_hint = f" or Enter for [{default_idx + 1}]" if default_idx is not None else ""
+    print(f"  Select [1-{len(options)}]{default_hint}: ", end="")
 
     try:
         choice = input().strip()
@@ -713,8 +722,12 @@ def prompt_terminal(mux_available: dict, args) -> tuple[str | None, str | None]:
         return None, None
 
     if not choice:
-        if default_mux and default_mode:
-            return default_mux, default_mode
+        if default_idx is not None:
+            key = options[default_idx][0]
+            if key == "current":
+                return None, None
+            mux, mode = key.split(":", 1)
+            return mux, mode
         return None, None
 
     try:
