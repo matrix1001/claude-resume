@@ -183,6 +183,22 @@ def output_oneline(conversations: list):
         print(line)
 
 
+def resolve_selection(conversations: list, args) -> dict | None:
+    """Return a single conversation dict if non-interactive selection succeeds,
+    or None if interactive TUI is needed."""
+    if args.last:
+        return conversations[0] if conversations else None
+    if args.index is not None:
+        idx = args.index - 1  # 1-indexed -> 0-indexed
+        if 0 <= idx < len(conversations):
+            return conversations[idx]
+        print(f"Invalid index: {args.index} (max {len(conversations)})", file=sys.stderr)
+        sys.exit(1)
+    if len(conversations) == 1:
+        return conversations[0]
+    return None
+
+
 def term_width() -> int:
     try:
         return os.get_terminal_size().columns
@@ -676,6 +692,15 @@ def main():
         output_oneline(conversations)
         sys.exit(0)
 
+    # Resolve selection (non-interactive if possible)
+    selected = resolve_selection(conversations, args)
+
+    # If we got a single session, resume it directly (non-interactive path)
+    if selected is not None:
+        # (management ops like --info, --rm, --dry-run will go here in Task 7)
+        resume_session(selected, args)
+        return
+
     if not conversations:
         if args.bg:
             print("No background/orphaned conversations — use /resume or claude-resume (without -b).")
@@ -693,22 +718,30 @@ def main():
     if session_id is None:
         sys.exit(0)
 
-    # Restore the original working directory of the selected conversation
     selected = next((c for c in conversations if c["session_id"] == session_id), None)
-    if selected and not args.no_cd:
-        cwd = selected.get("cwd", "")
-        if cwd and os.path.isdir(cwd):
-            os.chdir(cwd)
-        elif cwd:
-            print(f"  {YELLOW}Warning: original cwd no longer exists: {cwd}{RESET}")
-
-    short = session_id[:8]
-    if not args.no_cd:
-        print(f"\n  {GREEN}Resuming {short}...  (cwd: {os.getcwd()}){RESET}\n")
+    if selected:
+        resume_session(selected, args)
     else:
-        print(f"\n  {GREEN}Resuming {short}...{RESET}\n")
+        # Fallback: should not happen
+        os.execvp("claude", ["claude", "--resume", session_id])
 
-    os.execvp("claude", ["claude", "--resume", session_id])
+
+def resume_session(conversation: dict, args, mux=None, mode=None, extra_args=""):
+    """Execute the resume: chdir, build command, optionally wrap in multiplexer, exec."""
+    cwd = conversation.get("cwd", "") or os.getcwd()
+    if cwd and os.path.isdir(cwd) and not args.no_cd:
+        os.chdir(cwd)
+
+    cmd_parts = ["claude", "--resume", conversation["session_id"]]
+    if args.background:
+        cmd_parts.append("--bg")
+    if args.claude_args:
+        cmd_parts.extend(args.claude_args.split())
+    if extra_args:
+        cmd_parts.extend(extra_args.split())
+
+    print(f"\n  {GREEN}Resuming {conversation['short_id']}...{RESET}\n")
+    os.execvp(cmd_parts[0], cmd_parts)
 
 
 if __name__ == "__main__":
