@@ -731,6 +731,8 @@ def resume_session(conversation: dict, args, mux=None, mode=None, extra_args="")
     cwd = conversation.get("cwd", "") or os.getcwd()
     if cwd and os.path.isdir(cwd) and not args.no_cd:
         os.chdir(cwd)
+    elif cwd and not os.path.isdir(cwd) and not args.no_cd:
+        print(f"  {YELLOW}Warning: original cwd no longer exists: {cwd}{RESET}")
 
     cmd_parts = ["claude", "--resume", conversation["session_id"]]
     if args.background:
@@ -740,7 +742,10 @@ def resume_session(conversation: dict, args, mux=None, mode=None, extra_args="")
     if extra_args:
         cmd_parts.extend(extra_args.split())
 
-    print(f"\n  {GREEN}Resuming {conversation['short_id']}...{RESET}\n")
+    if args.no_cd:
+        print(f"\n  {GREEN}Resuming {conversation['short_id']}...{RESET}\n")
+    else:
+        print(f"\n  {GREEN}Resuming {conversation['short_id']}...  (cwd: {os.getcwd()}){RESET}\n")
     os.execvp(cmd_parts[0], cmd_parts)
 
 
