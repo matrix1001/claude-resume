@@ -184,6 +184,53 @@ def output_oneline(conversations: list):
         print(line)
 
 
+def show_info(conversation: dict):
+    """Print detailed session info."""
+    print(f"Session:  {conversation['session_id']}")
+    print(f"Kind:     {conversation['kind']}")
+    print(f"Status:   {conversation.get('status', 'unknown')}")
+    print(f"Name:     {conversation.get('name', '') or '(none)'}")
+    print(f"CWD:      {conversation.get('cwd', '') or '(unknown)'}")
+    print(f"Size:     {conversation['size_str']}")
+    print(f"Messages: {conversation['msg_count']}")
+    print(f"Last:     {conversation['last_active']}")
+    print(f"Preview:  {conversation['preview']}")
+
+
+def delete_session(conversation: dict, store: str, sessions_dir: str, force: bool):
+    """Delete .jsonl and session .json files. Prompts for confirmation in TTY."""
+    sid = conversation["session_id"]
+
+    if not force:
+        if os.isatty(sys.stdin.fileno()):
+            try:
+                ans = input(f"Delete session {sid[:8]}? [y/N]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print("Cancelled.")
+                sys.exit(0)
+            if ans != "y":
+                print("Cancelled.")
+                sys.exit(0)
+        else:
+            print("Non-TTY: use --force to delete without confirmation.", file=sys.stderr)
+            sys.exit(1)
+
+    jsonl_path = os.path.join(store, sid + ".jsonl")
+    try:
+        os.remove(jsonl_path)
+        print(f"Deleted: {jsonl_path}")
+    except OSError as e:
+        print(f"Warning: could not delete {jsonl_path}: {e}", file=sys.stderr)
+
+    sess_path = os.path.join(sessions_dir, sid + ".json")
+    if os.path.isfile(sess_path):
+        try:
+            os.remove(sess_path)
+            print(f"Deleted: {sess_path}")
+        except OSError as e:
+            print(f"Warning: could not delete {sess_path}: {e}", file=sys.stderr)
+
+
 def resolve_selection(conversations: list, args) -> dict | None:
     """Return a single conversation dict if non-interactive selection succeeds,
     or None if interactive TUI is needed."""
@@ -782,6 +829,16 @@ def main():
         store = os.path.join(projects_base, norm)
         project_name = os.path.basename(project_dir)
 
+    # Fast path: --count (no need to read JSONL content)
+    if args.count:
+        fnames = [f for f in os.listdir(store) if f.endswith(".jsonl")] if os.path.isdir(store) else []
+        if args.bg:
+            registry = load_session_registry(sessions_dir)
+            fnames = [f for f in fnames
+                      if registry.get(f.replace(".jsonl", ""), {}).get("kind") != "interactive"]
+        print(len(fnames))
+        sys.exit(0)
+
     # ── Conversation selection ────────────────────────────────────────────
     conversations = scan_conversations(store, sessions_dir, args.bg)
 
@@ -810,7 +867,15 @@ def main():
 
     # If we got a single session, resume it directly (non-interactive path)
     if selected is not None:
-        # (management ops like --info, --rm, --dry-run will go here in Task 7)
+        if args.info:
+            show_info(selected)
+            sys.exit(0)
+        if args.rm:
+            delete_session(selected, store, sessions_dir, args.force)
+            sys.exit(0)
+        if args.dry_run:
+            display_list([selected], project_name, args.bg)
+            sys.exit(0)
         resume_session(selected, args)
         return
 
