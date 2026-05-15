@@ -78,9 +78,9 @@ def time_ago(ts: str) -> str:
 
 
 def build_time_filter(args) -> tuple[datetime | None, datetime | None]:
-    """Return (since, until) from CLI flags. Time macros set defaults; explicit
-    --since/--until override the corresponding bound."""
-    now = datetime.now()
+    """Return (since, until) from CLI flags. Both are timezone-aware UTC.
+    Time macros set defaults; explicit --since/--until override the corresponding bound."""
+    now = datetime.now(timezone.utc)
     since: datetime | None = None
     until: datetime | None = None
 
@@ -89,15 +89,15 @@ def build_time_filter(args) -> tuple[datetime | None, datetime | None]:
     elif args.yesterday:
         yesterday = now - timedelta(days=1)
         since = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
-        until = yesterday.replace(hour=23, minute=59, second=59)
+        until = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
     elif args.this_week:
         monday = now - timedelta(days=now.weekday())
         since = monday.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if args.since:
-        since = datetime.strptime(args.since, "%Y-%m-%d")
+        since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     if args.until:
-        until = datetime.strptime(args.until, "%Y-%m-%d")
+        until = datetime.strptime(args.until, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
 
     return since, until
 
@@ -110,7 +110,7 @@ def apply_time_filter(conversations: list, since, until) -> list:
         if not ts:
             continue
         try:
-            dt = datetime.fromisoformat(ts[:19].replace("Z", "+00:00")).replace(tzinfo=None)
+            dt = datetime.fromisoformat(ts[:19].replace("Z", "+00:00"))
         except (ValueError, TypeError):
             continue
         if since and dt < since:
