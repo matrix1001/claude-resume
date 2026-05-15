@@ -17,6 +17,7 @@ Usage:
 import argparse
 import json
 import os
+import shutil
 import sys
 from datetime import datetime, timezone, timedelta
 
@@ -631,6 +632,105 @@ def init_colors_off():
     BOLD = CYAN = YELLOW = GRAY = GREEN = MAGENTA = RED = DIM = RESET = ""
 
 
+def detect_multiplexers() -> dict:
+    """Return available terminal multiplexers with their modes.
+    Format: {"zellij": [("mode_key", "label"), ...], "tmux": [...]}"""
+    available = {}
+    if os.environ.get("ZELLIJ") and shutil.which("zellij"):
+        available["zellij"] = [
+            ("tab", "New Zellij tab"),
+            ("pane-right", "New Zellij pane (split right)"),
+            ("pane-down", "New Zellij pane (split down)"),
+            ("float", "New Zellij floating pane"),
+        ]
+    if os.environ.get("TMUX") and shutil.which("tmux"):
+        available["tmux"] = [
+            ("window", "New tmux window"),
+            ("pane-right", "New tmux pane (split right)"),
+            ("pane-down", "New tmux pane (split down)"),
+        ]
+    return available
+
+
+def build_multiplexer_cmd(mux: str, mode: str, cwd: str, cmd: str) -> list[str]:
+    """Build the multiplexer command that wraps the claude invocation."""
+    if mux == "zellij":
+        if mode == "tab":
+            return ["zellij", "action", "new-tab", "--cwd", cwd, "--", *cmd.split()]
+        elif mode == "pane-right":
+            return ["zellij", "action", "new-pane", "-d", "right", "--cwd", cwd, "--", *cmd.split()]
+        elif mode == "pane-down":
+            return ["zellij", "action", "new-pane", "-d", "down", "--cwd", cwd, "--", *cmd.split()]
+        elif mode == "float":
+            return ["zellij", "action", "new-pane", "--floating", "--cwd", cwd, "--", *cmd.split()]
+    elif mux == "tmux":
+        if mode == "window":
+            return ["tmux", "new-window", "-c", cwd, cmd]
+        elif mode == "pane-right":
+            return ["tmux", "split-window", "-h", "-c", cwd, cmd]
+        elif mode == "pane-down":
+            return ["tmux", "split-window", "-v", "-c", cwd, cmd]
+    return cmd.split()
+
+
+def expand_terminal_cmd(template: str, cwd: str, cmd: str) -> list[str]:
+    """Expand {cwd} and {cmd} in custom terminal command template."""
+    expanded = template.replace("{cwd}", cwd).replace("{cmd}", cmd)
+    return expanded.split()
+
+
+def prompt_terminal(mux_available: dict, args) -> tuple[str | None, str | None]:
+    """Interactive prompt for terminal choice. Returns (multiplexer, mode) or (None, None)
+    for current terminal. Respects --zellij/--tmux as pre-selected defaults."""
+    default_mux = None
+    default_mode = None
+    if args.zellij:
+        default_mux = "zellij"
+        default_mode = args.zellij
+    elif args.tmux:
+        default_mux = "tmux"
+        default_mode = args.tmux
+
+    if not mux_available:
+        return None, None
+
+    options = [("current", "Current terminal")]
+    for mux_name, modes in mux_available.items():
+        for mode_key, mode_label in modes:
+            options.append((f"{mux_name}:{mode_key}", mode_label))
+
+    print()
+    print(f"  Open in:")
+    for i, (key, label) in enumerate(options):
+        marker = " (default)" if key == f"{default_mux}:{default_mode}" else ""
+        print(f"  [{i+1}] {label}{marker}")
+    print(f"  Select [1-{len(options)}] or Enter for [1]: ", end="")
+
+    try:
+        choice = input().strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None, None
+
+    if not choice:
+        if default_mux and default_mode:
+            return default_mux, default_mode
+        return None, None
+
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(options):
+            key = options[idx][0]
+            if key == "current":
+                return None, None
+            mux, mode = key.split(":", 1)
+            return mux, mode
+    except (ValueError, IndexError):
+        pass
+
+    return None, None
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
@@ -720,7 +820,12 @@ def main():
 
     selected = next((c for c in conversations if c["session_id"] == session_id), None)
     if selected:
-        resume_session(selected, args)
+        # Terminal multiplexer prompt (interactive only)
+        mux_available = detect_multiplexers()
+        mux, mode = None, None
+        if mux_available:
+            mux, mode = prompt_terminal(mux_available, args)
+        resume_session(selected, args, mux=mux, mode=mode)
     else:
         # Fallback: should not happen
         os.execvp("claude", ["claude", "--resume", session_id])
@@ -746,7 +851,16 @@ def resume_session(conversation: dict, args, mux=None, mode=None, extra_args="")
         print(f"\n  {GREEN}Resuming {conversation['short_id']}...{RESET}\n")
     else:
         print(f"\n  {GREEN}Resuming {conversation['short_id']}...  (cwd: {os.getcwd()}){RESET}\n")
-    os.execvp(cmd_parts[0], cmd_parts)
+    cmd_str = " ".join(cmd_parts)
+
+    if args.terminal_cmd:
+        exec_cmd = expand_terminal_cmd(args.terminal_cmd, cwd, cmd_str)
+    elif mux and mode:
+        exec_cmd = build_multiplexer_cmd(mux, mode, cwd, cmd_str)
+    else:
+        exec_cmd = cmd_parts
+
+    os.execvp(exec_cmd[0], exec_cmd)
 
 
 if __name__ == "__main__":
