@@ -30,7 +30,7 @@
 ## 安装
 
 ```bash
-curl -O https://raw.githubusercontent.com/<user>/claude-resume/main/claude-resume
+curl -O https://raw.githubusercontent.com/matrix1001/claude-resume/main/claude-resume
 chmod +x claude-resume
 mv claude-resume ~/.local/bin/
 ```
@@ -38,7 +38,7 @@ mv claude-resume ~/.local/bin/
 或者：
 
 ```bash
-git clone https://github.com/<user>/claude-resume.git
+git clone https://github.com/matrix1001/claude-resume.git
 cd claude-resume
 ln -s "$(pwd)/claude-resume" ~/.local/bin/claude-resume
 ```
