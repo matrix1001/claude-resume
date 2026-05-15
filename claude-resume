@@ -121,6 +121,37 @@ def apply_time_filter(conversations: list, since, until) -> list:
     return result
 
 
+def search_preview(conversations: list, keyword: str) -> list:
+    """Case-insensitive keyword match against preview text."""
+    kw = keyword.lower()
+    return [c for c in conversations if kw in c.get("preview", "").lower()]
+
+
+def search_full(store: str, conversations: list, keyword: str, max_results: int) -> list:
+    """Case-insensitive keyword match scanning entire JSONL files. Only scans
+    up to max_results files, in the order they appear in `conversations`."""
+    kw = keyword.lower()
+    matched_ids = set()
+    for c in conversations[:max_results]:
+        path = os.path.join(store, c["session_id"] + ".jsonl")
+        try:
+            with open(path) as fh:
+                if kw in fh.read().lower():
+                    matched_ids.add(c["session_id"])
+        except Exception:
+            continue
+    return [c for c in conversations if c["session_id"] in matched_ids]
+
+
+def apply_search_filter(store: str, conversations: list, args) -> list:
+    """Apply keyword search; dispatch to preview or full-text mode."""
+    if not args.search:
+        return conversations
+    if args.search_full:
+        return search_full(store, conversations, args.search, args.max_results)
+    return search_preview(conversations, args.search)
+
+
 def term_width() -> int:
     try:
         return os.get_terminal_size().columns
@@ -593,6 +624,9 @@ def main():
         sys.exit(2)
     if since or until:
         conversations = apply_time_filter(conversations, since, until)
+
+    # Search filter
+    conversations = apply_search_filter(store, conversations, args)
 
     if not conversations:
         if args.bg:
