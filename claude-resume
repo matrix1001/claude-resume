@@ -335,12 +335,6 @@ def extract_metadata(path: str) -> dict:
                         continue
                     info["first_user_msg"] = txt
                     break
-                if not info["first_user_msg"]:
-                    for txt in texts:
-                        txt = txt.strip()
-                        if txt and not txt.startswith("<command") and not txt.startswith("<local-command"):
-                            info["first_user_msg"] = txt
-                            break
     except Exception:
         pass
     return info
@@ -701,30 +695,31 @@ def detect_multiplexers() -> dict:
     return available
 
 
-def build_multiplexer_cmd(mux: str, mode: str, cwd: str, cmd: str) -> list[str]:
+def build_multiplexer_cmd(mux: str, mode: str, cwd: str, cmd_parts: list[str]) -> list[str]:
     """Build the multiplexer command that wraps the claude invocation."""
+    cmd_str = " ".join(cmd_parts)
     if mux == "zellij":
         if mode == "tab":
-            return ["zellij", "action", "new-tab", "--cwd", cwd, "--", *cmd.split()]
+            return ["zellij", "action", "new-tab", "--cwd", cwd, "--", *cmd_parts]
         elif mode == "pane-right":
-            return ["zellij", "action", "new-pane", "-d", "right", "--cwd", cwd, "--", *cmd.split()]
+            return ["zellij", "action", "new-pane", "-d", "right", "--cwd", cwd, "--", *cmd_parts]
         elif mode == "pane-down":
-            return ["zellij", "action", "new-pane", "-d", "down", "--cwd", cwd, "--", *cmd.split()]
+            return ["zellij", "action", "new-pane", "-d", "down", "--cwd", cwd, "--", *cmd_parts]
         elif mode == "float":
-            return ["zellij", "action", "new-pane", "--floating", "--cwd", cwd, "--", *cmd.split()]
+            return ["zellij", "action", "new-pane", "--floating", "--cwd", cwd, "--", *cmd_parts]
     elif mux == "tmux":
         if mode == "window":
-            return ["tmux", "new-window", "-c", cwd, cmd]
+            return ["tmux", "new-window", "-c", cwd, cmd_str]
         elif mode == "pane-right":
-            return ["tmux", "split-window", "-h", "-c", cwd, cmd]
+            return ["tmux", "split-window", "-h", "-c", cwd, cmd_str]
         elif mode == "pane-down":
-            return ["tmux", "split-window", "-v", "-c", cwd, cmd]
-    return cmd.split()
+            return ["tmux", "split-window", "-v", "-c", cwd, cmd_str]
+    return cmd_parts
 
 
-def expand_terminal_cmd(template: str, cwd: str, cmd: str) -> list[str]:
+def expand_terminal_cmd(template: str, cwd: str, cmd_parts: list[str]) -> list[str]:
     """Expand {cwd} and {cmd} in custom terminal command template."""
-    expanded = template.replace("{cwd}", cwd).replace("{cmd}", cmd)
+    expanded = template.replace("{cwd}", cwd).replace("{cmd}", " ".join(cmd_parts))
     return expanded.split()
 
 
@@ -955,7 +950,6 @@ def resume_session(conversation: dict, args, mux=None, mode=None, extra_args="")
         print(f"\n  {GREEN}Resuming {conversation['short_id']}...{RESET}\n")
     else:
         print(f"\n  {GREEN}Resuming {conversation['short_id']}...  (cwd: {os.getcwd()}){RESET}\n")
-    cmd_str = " ".join(cmd_parts)
 
     # Resolve mux/mode: explicitly passed takes priority, else fall back to CLI flags
     if not mux and args.zellij:
@@ -966,9 +960,9 @@ def resume_session(conversation: dict, args, mux=None, mode=None, extra_args="")
         mode = args.tmux
 
     if args.terminal_cmd:
-        exec_cmd = expand_terminal_cmd(args.terminal_cmd, cwd, cmd_str)
+        exec_cmd = expand_terminal_cmd(args.terminal_cmd, cwd, cmd_parts)
     elif mux and mode:
-        exec_cmd = build_multiplexer_cmd(mux, mode, cwd, cmd_str)
+        exec_cmd = build_multiplexer_cmd(mux, mode, cwd, cmd_parts)
     else:
         exec_cmd = cmd_parts
 
