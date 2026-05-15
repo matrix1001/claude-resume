@@ -404,6 +404,8 @@ def scan_conversations(store: str, sessions_dir: str, bg_only: bool) -> list:
             "cwd": cwd,
         })
 
+    # Sort by most recent first (descending timestamp)
+    results.sort(key=lambda x: x["last_active_raw"] or "", reverse=True)
     return results
 
 
@@ -532,9 +534,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Terminal
     term = p.add_argument_group("terminal multiplexer")
-    term.add_argument("--zellij", nargs="?", const="tab", choices=["tab", "pane", "float"],
+    term.add_argument("--zellij", nargs="?", const="tab", choices=["tab", "pane-right", "pane-down", "float"],
                       help="Open in Zellij (default: tab)")
-    term.add_argument("--tmux", nargs="?", const="window", choices=["window", "pane"],
+    term.add_argument("--tmux", nargs="?", const="window", choices=["window", "pane-right", "pane-down"],
                       help="Open in tmux (default: window)")
     term.add_argument("--terminal-cmd", metavar="TMPL", help="Custom terminal cmd with {cwd} and {cmd}")
 
@@ -854,6 +856,10 @@ def main():
     # Search filter
     conversations = apply_search_filter(store, conversations, args)
 
+    # Limit
+    if args.limit:
+        conversations = conversations[:args.limit]
+
     # Non-interactive output modes
     if args.json:
         output_json(conversations)
@@ -898,6 +904,17 @@ def main():
 
     selected = next((c for c in conversations if c["session_id"] == session_id), None)
     if selected:
+        # Management operations (honored in interactive path too)
+        if args.info:
+            show_info(selected)
+            sys.exit(0)
+        if args.rm:
+            delete_session(selected, store, sessions_dir, args.force)
+            sys.exit(0)
+        if args.dry_run:
+            print(f"  Selected: {selected['short_id']} — {selected['preview']}")
+            sys.exit(0)
+
         # Terminal multiplexer prompt (interactive only)
         mux_available = detect_multiplexers()
         mux, mode = None, None
@@ -939,6 +956,14 @@ def resume_session(conversation: dict, args, mux=None, mode=None, extra_args="")
     else:
         print(f"\n  {GREEN}Resuming {conversation['short_id']}...  (cwd: {os.getcwd()}){RESET}\n")
     cmd_str = " ".join(cmd_parts)
+
+    # Resolve mux/mode: explicitly passed takes priority, else fall back to CLI flags
+    if not mux and args.zellij:
+        mux = "zellij"
+        mode = args.zellij
+    elif not mux and args.tmux:
+        mux = "tmux"
+        mode = args.tmux
 
     if args.terminal_cmd:
         exec_cmd = expand_terminal_cmd(args.terminal_cmd, cwd, cmd_str)
