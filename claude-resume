@@ -18,7 +18,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # ── Terminal styling ──────────────────────────────────────────────────────────
 
@@ -75,6 +75,50 @@ def time_ago(ts: str) -> str:
         return f"{int(s // 604800)}w ago"
     except Exception:
         return ""
+
+
+def build_time_filter(args) -> tuple[datetime | None, datetime | None]:
+    """Return (since, until) from CLI flags. Time macros set defaults; explicit
+    --since/--until override the corresponding bound."""
+    now = datetime.now()
+    since: datetime | None = None
+    until: datetime | None = None
+
+    if args.today:
+        since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif args.yesterday:
+        yesterday = now - timedelta(days=1)
+        since = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+        until = yesterday.replace(hour=23, minute=59, second=59)
+    elif args.this_week:
+        monday = now - timedelta(days=now.weekday())
+        since = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if args.since:
+        since = datetime.strptime(args.since, "%Y-%m-%d")
+    if args.until:
+        until = datetime.strptime(args.until, "%Y-%m-%d")
+
+    return since, until
+
+
+def apply_time_filter(conversations: list, since, until) -> list:
+    """Filter conversations by time range. `last_active_raw` is ISO timestamp string."""
+    result = []
+    for c in conversations:
+        ts = c.get("last_active_raw", "")
+        if not ts:
+            continue
+        try:
+            dt = datetime.fromisoformat(ts[:19].replace("Z", "+00:00")).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            continue
+        if since and dt < since:
+            continue
+        if until and dt > until:
+            continue
+        result.append(c)
+    return result
 
 
 def term_width() -> int:
@@ -540,6 +584,11 @@ def main():
 
     # ── Conversation selection ────────────────────────────────────────────
     conversations = scan_conversations(store, sessions_dir, args.bg)
+
+    # Time filter
+    since, until = build_time_filter(args)
+    if since or until:
+        conversations = apply_time_filter(conversations, since, until)
 
     if not conversations:
         if args.bg:
