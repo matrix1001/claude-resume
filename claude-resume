@@ -586,7 +586,11 @@ def main():
     conversations = scan_conversations(store, sessions_dir, args.bg)
 
     # Time filter
-    since, until = build_time_filter(args)
+    try:
+        since, until = build_time_filter(args)
+    except ValueError as e:
+        print(f"Invalid date: {e}", file=sys.stderr)
+        sys.exit(2)
     if since or until:
         conversations = apply_time_filter(conversations, since, until)
 
