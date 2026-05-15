@@ -2,7 +2,7 @@
 
 > 唯一支持 Background Session、终端复用器集成、双模式（TUI + CLI）的 Claude Code 会话恢复工具。
 
-[English](README.en.md) | [设计文档](docs/superpowers/specs/2026-05-15-claude-resume-v2-design.md)
+[English](README.en.md)
 
 `claude-resume` 让你秒级恢复任何 Claude Code 会话——内置 `/resume` 只显示最近 10 个交互会话，看不到后台任务和孤儿会话。**纯 Python 3，零依赖，单文件 980 行。**
 

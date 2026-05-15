@@ -2,7 +2,7 @@
 
 > The only Claude Code session resumer with background session support, terminal multiplexer integration, and dual-mode (TUI + CLI) operation.
 
-[中文文档](README.md) | [Design Doc](docs/superpowers/specs/2026-05-15-claude-resume-v2-design.md)
+[中文文档](README.md)
 
 Resume any Claude Code session in seconds. The built-in `/resume` only shows the last 10 interactive sessions — it can't see background tasks or orphaned sessions. **Pure Python 3, zero dependencies, single ~980-line file.**
 
