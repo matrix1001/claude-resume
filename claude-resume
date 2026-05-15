@@ -152,6 +152,37 @@ def apply_search_filter(store: str, conversations: list, args) -> list:
     return search_preview(conversations, args.search)
 
 
+def output_json(conversations: list):
+    """Print conversations as JSON to stdout."""
+    out = []
+    for c in conversations:
+        out.append({
+            "session_id": c["session_id"],
+            "short_id": c["short_id"],
+            "size_kb": c.get("size_kb", 0),
+            "msg_count": c["msg_count"],
+            "last_active": c["last_active"],
+            "preview": c["preview"],
+            "kind": c["kind"],
+            "status": c.get("status", ""),
+            "name": c.get("name", ""),
+            "cwd": c.get("cwd", ""),
+        })
+    json.dump(out, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+
+def output_oneline(conversations: list):
+    """Print conversations as compact single-line entries."""
+    for c in conversations:
+        line = (
+            f"{c['short_id']}  {c['last_active']}  {c['kind']}  "
+            f"{c.get('status', '')}  {c['size_str']}  {c['msg_count']}msgs  "
+            f"{c['preview']}"
+        )
+        print(line)
+
+
 def term_width() -> int:
     try:
         return os.get_terminal_size().columns
@@ -578,9 +609,18 @@ def select_project(projects: list) -> str | None:
     return projects[int(choice) - 1]["store"]
 
 
+def init_colors_off():
+    """Disable all ANSI color codes for --no-color mode."""
+    global BOLD, CYAN, YELLOW, GRAY, GREEN, MAGENTA, RED, DIM, RESET
+    BOLD = CYAN = YELLOW = GRAY = GREEN = MAGENTA = RED = DIM = RESET = ""
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.no_color:
+        init_colors_off()
 
     sessions_dir = os.path.join(os.path.expanduser("~"), ".claude", "sessions")
     projects_base = os.path.join(os.path.expanduser("~"), ".claude", "projects")
@@ -627,6 +667,14 @@ def main():
 
     # Search filter
     conversations = apply_search_filter(store, conversations, args)
+
+    # Non-interactive output modes
+    if args.json:
+        output_json(conversations)
+        sys.exit(0)
+    if args.oneline:
+        output_oneline(conversations)
+        sys.exit(0)
 
     if not conversations:
         if args.bg:
