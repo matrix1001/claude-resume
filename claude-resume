@@ -96,9 +96,13 @@ def build_time_filter(args) -> tuple[datetime | None, datetime | None]:
         since = monday.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if args.since:
-        since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        local_dt = datetime.strptime(args.since, "%Y-%m-%d")
+        local_tz = datetime.now().astimezone().tzinfo
+        since = local_dt.replace(tzinfo=local_tz).astimezone(timezone.utc)
     if args.until:
-        until = datetime.strptime(args.until, "%Y-%m-%d").replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
+        local_dt = datetime.strptime(args.until, "%Y-%m-%d")
+        local_tz = datetime.now().astimezone().tzinfo
+        until = local_dt.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=local_tz).astimezone(timezone.utc)
 
     return since, until
 
@@ -220,7 +224,8 @@ def delete_session(conversation: dict, store: str, sessions_dir: str, force: boo
         os.remove(jsonl_path)
         print(f"Deleted: {jsonl_path}")
     except OSError as e:
-        print(f"Warning: could not delete {jsonl_path}: {e}", file=sys.stderr)
+        print(f"Error: could not delete {jsonl_path}: {e}", file=sys.stderr)
+        sys.exit(1)
 
     sess_path = os.path.join(sessions_dir, sid + ".json")
     if os.path.isfile(sess_path):
@@ -864,18 +869,19 @@ def main():
     if args.limit:
         conversations = conversations[:args.limit]
 
-    # Non-interactive output modes
-    if args.json:
-        output_json(conversations)
-        sys.exit(0)
-    if args.oneline:
-        output_oneline(conversations)
-        sys.exit(0)
-
     # Resolve selection (non-interactive if possible)
     selected = resolve_selection(conversations, args)
 
-    # If we got a single session, resume it directly (non-interactive path)
+    # Non-interactive output modes: respect selection narrowing
+    output_list = [selected] if selected is not None else conversations
+    if args.json:
+        output_json(output_list)
+        sys.exit(0)
+    if args.oneline:
+        output_oneline(output_list)
+        sys.exit(0)
+
+    # Session management / resume (non-interactive: single session selected)
     if selected is not None:
         if args.info:
             show_info(selected)
