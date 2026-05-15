@@ -556,34 +556,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 # ── All-projects mode ─────────────────────────────────────────────────────────
 
-def decode_project_name(norm: str) -> str:
-    """Decode a normalized path back to something readable.
-    '-home-matrix-project-foo' -> '~/project/foo'"""
-    if norm.startswith("-"):
-        path = "/" + norm[1:].replace("-", "/")
-        home = os.path.expanduser("~")
-        if path.startswith(home):
-            return "~" + path[len(home):]
-        return path
-    return norm
-
-
 def scan_all_projects(projects_base: str, sessions_dir: str, bg_only: bool) -> list:
-    """Return list of {name, path, norm, conv_count, last_active} for all projects."""
+    """Return list of {name, norm, store, conv_count, last_active} for all projects.
+    Project name is extracted from session cwd (registry or JSONL) — no lossy path decoding."""
     result = []
     if not os.path.isdir(projects_base):
         return result
 
     registry = load_session_registry(sessions_dir)
+    home = os.path.expanduser("~")
 
     for norm in sorted(os.listdir(projects_base)):
         store = os.path.join(projects_base, norm)
         if not os.path.isdir(store):
             continue
 
-        # Count conversations and find latest activity
         conv_count = 0
         latest_ts = ""
+        project_cwd = ""
+
         for fname in os.listdir(store):
             if not fname.endswith(".jsonl"):
                 continue
@@ -592,7 +583,12 @@ def scan_all_projects(projects_base: str, sessions_dir: str, bg_only: bool) -> l
             if bg_only and reg.get("kind") == "interactive":
                 continue
             conv_count += 1
-            # Quick timestamp check
+
+            # Capture project CWD: prefer session registry, then JSONL
+            if not project_cwd:
+                project_cwd = reg.get("cwd", "")
+
+            # Timestamp scan (also grab cwd from JSONL if registry didn't have it)
             path = os.path.join(store, fname)
             try:
                 with open(path) as fh:
@@ -602,6 +598,10 @@ def scan_all_projects(projects_base: str, sessions_dir: str, bg_only: bool) -> l
                             ts = d.get("timestamp", "")
                             if ts and ts > latest_ts:
                                 latest_ts = ts
+                            if not project_cwd:
+                                c = d.get("cwd", "")
+                                if c:
+                                    project_cwd = c
                         except json.JSONDecodeError:
                             continue
             except Exception:
@@ -610,7 +610,16 @@ def scan_all_projects(projects_base: str, sessions_dir: str, bg_only: bool) -> l
         if conv_count == 0:
             continue
 
-        name = decode_project_name(norm)
+        # Format project name from cwd, with fallback
+        if project_cwd:
+            if project_cwd.startswith(home):
+                name = "~" + project_cwd[len(home):]
+            else:
+                name = project_cwd
+        else:
+            # Fallback: use normalized name as-is (no lossy reverse)
+            name = norm
+
         result.append({
             "name": name,
             "norm": norm,
