@@ -53,7 +53,8 @@ def format_time(ts: str) -> str:
     if not ts or ts == "unknown":
         return "????-??-?? ??:??"
     try:
-        return ts[:19].replace("T", " ")
+        dt = datetime.fromisoformat(ts[:19].replace("Z", "+00:00"))
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return "unknown"
 
