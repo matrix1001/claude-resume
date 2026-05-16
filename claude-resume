@@ -248,8 +248,6 @@ def resolve_selection(conversations: list, args) -> dict | None:
             return conversations[idx]
         print(f"Invalid index: {args.index} (max {len(conversations)})", file=sys.stderr)
         sys.exit(1)
-    if len(conversations) == 1:
-        return conversations[0]
     return None
 
 
